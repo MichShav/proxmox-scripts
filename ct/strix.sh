@@ -40,7 +40,7 @@ command -v pvesh &>/dev/null || err "pvesh not found — is this a Proxmox VE ho
 
 echo -e "${BOLD}"
 echo "  ╔══════════════════════════════════════╗"
-echo "  ║   Strix LXC Installer for Proxmox   ║"
+echo "  ║   Strix LXC Installer for Proxmox    ║"
 echo "  ╚══════════════════════════════════════╝"
 echo -e "${CL}"
 
