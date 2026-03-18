@@ -30,8 +30,8 @@ ok "Dependencies installed."
 # ── Get latest Strix release ──────────────────────────────────
 
 info "Fetching latest Strix release…"
-RELEASE=$(curl -fsSL https://api.github.com/repos/eduard256/Strix/releases/latest \
-  | grep '"tag_name"' | awk -F'"' '{print $4}')
+RELEASE=$(curl -fsSL https://api.github.com/repos/eduard256/Strix/releases \
+  | awk -F'"' '/tag_name/{tag=$4} /browser_download_url/{print tag; exit}')
 [[ -z "$RELEASE" ]] && err "Could not determine latest Strix release."
 ok "Latest release: ${RELEASE}"
 
@@ -39,15 +39,15 @@ ok "Latest release: ${RELEASE}"
 
 ARCH=$(dpkg --print-architecture)
 case "$ARCH" in
-  amd64) BINARY="strix_linux_amd64" ;;
-  arm64) BINARY="strix_linux_arm64" ;;
+  amd64) ARCH_STR="x86_64" ;;
+  arm64) ARCH_STR="arm64" ;;
   *)     err "Unsupported architecture: ${ARCH}" ;;
 esac
 
 # ── Download & install binary ─────────────────────────────────
 
 info "Downloading Strix ${RELEASE} (${ARCH})…"
-DOWNLOAD_URL="https://github.com/eduard256/Strix/releases/download/${RELEASE}/${BINARY}.tar.gz"
+DOWNLOAD_URL="https://github.com/eduard256/Strix/releases/download/${RELEASE}/Strix_${RELEASE#v}_linux_${ARCH_STR}.tar.gz"
 curl -fsSL "$DOWNLOAD_URL" -o /tmp/strix.tar.gz \
   || err "Download failed. Check: ${DOWNLOAD_URL}"
 
@@ -104,17 +104,17 @@ cat <<'UPDATESCRIPT' > /usr/local/bin/strix-update
 #!/usr/bin/env bash
 set -euo pipefail
 CURRENT=$(cat /opt/strix_version.txt 2>/dev/null || echo "unknown")
-RELEASE=$(curl -fsSL https://api.github.com/repos/eduard256/Strix/releases/latest \
-  | grep '"tag_name"' | awk -F'"' '{print $4}')
+RELEASE=$(curl -fsSL https://api.github.com/repos/eduard256/Strix/releases \
+  | awk -F'"' '/tag_name/{tag=$4} /browser_download_url/{print tag; exit}')
 if [[ "$RELEASE" == "$CURRENT" ]]; then
   echo "Already up to date: ${CURRENT}"
   exit 0
 fi
 echo "Updating Strix: ${CURRENT} → ${RELEASE}"
 ARCH=$(dpkg --print-architecture)
-[[ "$ARCH" == "amd64" ]] && BINARY="strix_linux_amd64" || BINARY="strix_linux_arm64"
+[[ "$ARCH" == "amd64" ]] && ARCH_STR="x86_64" || ARCH_STR="arm64"
 systemctl stop strix
-curl -fsSL "https://github.com/eduard256/Strix/releases/download/${RELEASE}/${BINARY}.tar.gz" \
+curl -fsSL "https://github.com/eduard256/Strix/releases/download/${RELEASE}/Strix_${RELEASE#v}_linux_${ARCH_STR}.tar.gz" \
   | tar -xzf - -C /tmp
 mv /tmp/strix /usr/local/bin/strix
 chmod +x /usr/local/bin/strix
