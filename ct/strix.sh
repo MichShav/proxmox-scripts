@@ -80,6 +80,7 @@ pct create "$CT_ID" "$OS_TEMPLATE" \
   --memory "$RAM" \
   --rootfs "${STORAGE}:${DISK_SIZE}" \
   --net0 "name=eth0,bridge=${BRIDGE},ip=dhcp" \
+  --nameserver "1.1.1.1" \
   --unprivileged "$UNPRIVILEGED" \
   --features "nesting=1" \
   --start 1 \
