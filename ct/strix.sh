@@ -26,7 +26,8 @@ RAM="512"                    # MB
 CPU="1"
 BRIDGE="vmbr0"
 OS_TEMPLATE=""               # leave blank = auto-download latest Debian 12
-STORAGE="local-lvm"          # change to your preferred storage
+TEMPLATE_STORAGE="local"     # must support vztmpl content (always 'local' on default Proxmox)
+STORAGE="local-lvm"          # container rootfs storage
 UNPRIVILEGED=1
 PORT=4567
 
@@ -56,7 +57,7 @@ info "Using CT ID: ${CT_ID}"
 
 if [[ -z "$OS_TEMPLATE" ]]; then
   info "Looking for Debian 12 template…"
-  OS_TEMPLATE=$(pveam list "$STORAGE" 2>/dev/null \
+  OS_TEMPLATE=$(pveam list "$TEMPLATE_STORAGE" 2>/dev/null \
     | awk '/debian-12/{print $1}' | tail -1 || true)
 
   if [[ -z "$OS_TEMPLATE" ]]; then
@@ -65,8 +66,9 @@ if [[ -z "$OS_TEMPLATE" ]]; then
     TEMPLATE_NAME=$(pveam available --section system \
       | awk '/debian-12-standard/{print $2}' | tail -1)
     [[ -z "$TEMPLATE_NAME" ]] && err "Could not find a Debian 12 template to download."
-    pveam download "$STORAGE" "$TEMPLATE_NAME" &>/dev/null
-    OS_TEMPLATE="${STORAGE}:vztmpl/${TEMPLATE_NAME}"
+    pveam download "$TEMPLATE_STORAGE" "$TEMPLATE_NAME" \
+      || err "Failed to download template to ${TEMPLATE_STORAGE}."
+    OS_TEMPLATE="${TEMPLATE_STORAGE}:vztmpl/${TEMPLATE_NAME}"
   fi
 fi
 ok "Template: ${OS_TEMPLATE}"
