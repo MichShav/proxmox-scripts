@@ -106,7 +106,7 @@ done
 
 info "Running Strix install inside container…"
 pct exec "$CT_ID" -- bash -c \
-  "apt-get install -qq -y curl &>/dev/null && bash <(curl -fsSL ${INSTALL_URL})"
+  "apt-get update -qq &>/dev/null && apt-get install -qq -y curl &>/dev/null && bash <(curl -fsSL ${INSTALL_URL})"
 
 # ── Done ─────────────────────────────────────────────────────
 
