@@ -14,6 +14,19 @@ err()  { echo -e "${RD}[ERROR]${CL} $*" >&2; exit 1; }
 
 [[ "$(id -u)" -ne 0 ]] && err "Must run as root."
 
+# ── Wait for network ──────────────────────────────────────────
+
+info "Waiting for network…"
+for i in {1..20}; do
+  [[ -n "$(hostname -I 2>/dev/null)" ]] && break
+  sleep 1
+done
+[[ -z "$(hostname -I 2>/dev/null)" ]] && err "No network after 20s."
+ok "Network: $(hostname -I | awk '{print $1}')"
+
+# Prevent slow boot from networkd-wait-online on future restarts
+systemctl disable -q --now systemd-networkd-wait-online.service 2>/dev/null || true
+
 # ── Update OS ────────────────────────────────────────────────
 
 info "Updating OS…"
