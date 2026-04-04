@@ -21,15 +21,15 @@ err()   { echo -e "${RD}[ERROR]${CL} $*" >&2; exit 1; }
 
 APP="Strix"
 HOSTNAME="strix"
-DISK_SIZE="4"
-RAM="512"
-CPU="1"
+DISK_SIZE="8"
+RAM="1024"
+CPU="2"
 BRIDGE="vmbr0"
 TEMPLATE_STORAGE="local"
 STORAGE="local-lvm"
 NET="dhcp"
 GW=""
-UNPRIVILEGED=1
+UNPRIVILEGED=0  # Must be privileged for Docker-in-LXC
 PORT=4567
 
 INSTALL_URL="https://raw.githubusercontent.com/MichShav/proxmox-scripts/main/ct/strix-install.sh"
@@ -55,7 +55,6 @@ command -v pct      &>/dev/null  || err "pct not found — is this a Proxmox VE 
 command -v pvesh    &>/dev/null  || err "pvesh not found — is this a Proxmox VE host?"
 command -v pveam    &>/dev/null  || err "pveam not found."
 command -v whiptail &>/dev/null  || err "whiptail not found."
-command -v lxc-attach &>/dev/null || err "lxc-attach not found — install lxc: apt-get install lxc"
 
 # ── Header ────────────────────────────────────────────────────
 
@@ -91,7 +90,6 @@ if [[ "$MODE" == "2" ]]; then
     3>&1 1>&2 2>&3) || err "Cancelled."
   [[ "$CT_ID" =~ ^[0-9]+$ ]] || err "CT ID must be a number."
 
-  # Check ID is not already in use cluster-wide
   if pvesh get /cluster/resources --type vm 2>/dev/null \
       | grep -qE "\"vmid\":\s*${CT_ID}[^0-9]"; then
     err "CT ID ${CT_ID} is already in use on this cluster."
@@ -106,9 +104,10 @@ if [[ "$MODE" == "2" ]]; then
   # ── Disk ───────────────────────────────────────────────────
   DISK_SIZE=$(whiptail --backtitle "Strix LXC Installer" \
     --title "Disk Size" \
-    --inputbox "Disk size in GB:" 8 40 "$DISK_SIZE" \
+    --inputbox "Disk size in GB (8+ recommended for Docker):" 8 50 "$DISK_SIZE" \
     3>&1 1>&2 2>&3) || err "Cancelled."
   [[ "$DISK_SIZE" =~ ^[0-9]+$ ]] || err "Disk size must be a number."
+  [[ "$DISK_SIZE" -lt 4 ]] && warn "Less than 4 GB may not be enough for Docker + Strix."
 
   # ── CPU ────────────────────────────────────────────────────
   CPU=$(whiptail --backtitle "Strix LXC Installer" \
@@ -125,7 +124,6 @@ if [[ "$MODE" == "2" ]]; then
   [[ "$RAM" =~ ^[0-9]+$ ]] || err "RAM must be a number."
 
   # ── Container storage ──────────────────────────────────────
-  # List active storages that support container rootfs (lvmthin, lvm, dir, nfs, cifs)
   mapfile -t _STOR_LINES < <(pvesm status --content rootdir 2>/dev/null \
     | awk 'NR>1 && $3=="active" {printf "%s\t%d GB free\n", $1, int($6/1024/1024/1024)}' \
     | sort)
@@ -152,7 +150,12 @@ if [[ "$MODE" == "2" ]]; then
   mapfile -t _BRIDGES < <(find /sys/class/net/*/bridge -maxdepth 0 2>/dev/null \
     | sed 's|/sys/class/net/||;s|/bridge||' | sort)
 
-  if [[ ${#_BRIDGES[@]} -gt 1 ]]; then
+  if [[ ${#_BRIDGES[@]} -eq 0 ]]; then
+    warn "No bridges found. Keeping default: ${BRIDGE}"
+    warn "Make sure '${BRIDGE}' exists or container networking will fail."
+  elif [[ ${#_BRIDGES[@]} -eq 1 ]]; then
+    BRIDGE="${_BRIDGES[0]}"
+  else
     _BR_OPTS=()
     for _br in "${_BRIDGES[@]}"; do
       _BR_OPTS+=("$_br" "")
@@ -183,6 +186,16 @@ if [[ "$MODE" == "2" ]]; then
 
 fi  # end advanced
 
+# ── Verify bridge exists ──────────────────────────────────────
+
+if [[ ! -d "/sys/class/net/${BRIDGE}/bridge" ]]; then
+  warn "Bridge '${BRIDGE}' not found on this host."
+  whiptail --backtitle "Strix LXC Installer" \
+    --title "Warning" \
+    --yesno "Bridge '${BRIDGE}' does not exist. Container networking may fail.\n\nContinue anyway?" \
+    10 55 || err "Cancelled."
+fi
+
 # ── Confirm ───────────────────────────────────────────────────
 
 NET_DISPLAY="$NET"
@@ -199,9 +212,10 @@ whiptail --backtitle "Strix LXC Installer" \
   Bridge       : ${BRIDGE}
   IPv4         : ${NET_DISPLAY}
   Port         : ${PORT}
+  Privileged   : Yes (required for Docker)
 
   Proceed?" \
-  19 55 || err "Cancelled."
+  20 55 || err "Cancelled."
 
 # ── Find / download Debian 12 template ───────────────────────
 
@@ -226,7 +240,7 @@ ok "Template: ${TEMPLATE_NAME}"
 NET0="name=eth0,bridge=${BRIDGE},ip=${NET}"
 [[ -n "${GW:-}" ]] && NET0="${NET0},gw=${GW}"
 
-# ── Create the LXC ───────────────────────────────────────────
+# ── Create the LXC (privileged for Docker) ────────────────────
 
 info "Creating LXC container ${CT_ID} (${HOSTNAME})…"
 if ! pct create "$CT_ID" "$TEMPLATE_NAME" \
@@ -278,17 +292,17 @@ ok "Container IP: ${IP}"
 info "Testing internet connectivity…"
 CONNECTED=false
 for host in 1.1.1.1 8.8.8.8 9.9.9.9; do
-  pct exec "$CT_ID" -- ping -c1 -W2 "$host" &>/dev/null && { CONNECTED=true; break; }
+  pct exec "$CT_ID" -- ping -c1 -W3 "$host" &>/dev/null && { CONNECTED=true; break; }
 done
 $CONNECTED || err "Container has an IP but cannot reach the internet. Check bridge/gateway config."
 ok "Internet reachable."
 
 # ── Run install inside container ──────────────────────────────
 
-info "Running Strix install inside container…"
-lxc-attach -n "$CT_ID" -- bash -c \
+info "Running Strix install inside container (this may take a few minutes)…"
+pct exec "$CT_ID" -- bash -c \
   "apt-get update -qq && apt-get install -qq -y curl && bash <(curl -fsSL ${INSTALL_URL})" \
-  || err "Install failed. Run: pct exec ${CT_ID} -- journalctl -u strix -n 50"
+  || err "Install failed. Check logs: pct exec ${CT_ID} -- bash"
 
 # ── Done ─────────────────────────────────────────────────────
 
@@ -297,6 +311,6 @@ echo -e "${GN}${BOLD}  ✔ Strix installed successfully!${CL}"
 echo -e "  ${BOLD}CT ID   :${CL} ${CT_ID}"
 echo -e "  ${BOLD}Hostname:${CL} ${HOSTNAME}"
 echo -e "  ${BOLD}Web UI  :${CL} ${BL}http://${IP}:${PORT}${CL}"
-echo -e "  ${BOLD}Logs    :${CL} pct exec ${CT_ID} -- journalctl -u strix -f"
+echo -e "  ${BOLD}Logs    :${CL} pct exec ${CT_ID} -- docker logs -f strix"
 echo -e "  ${BOLD}Update  :${CL} pct exec ${CT_ID} -- strix-update"
 echo ""
