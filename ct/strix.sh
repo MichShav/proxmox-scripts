@@ -61,7 +61,7 @@ command -v whiptail &>/dev/null  || err "whiptail not found."
 clear
 echo -e "${BOLD}"
 echo "  ╔══════════════════════════════════════╗"
-echo "  ║   Strix LXC Installer for Proxmox   ║"
+echo "  ║  ${APP} LXC Installer for Proxmox   ║"
 echo "  ╚══════════════════════════════════════╝"
 echo -e "${CL}"
 

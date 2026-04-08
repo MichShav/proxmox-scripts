@@ -10,7 +10,17 @@ Personal Proxmox VE LXC installer scripts.
 
 [Strix](https://github.com/eduard256/Strix) automatically finds working RTSP/HTTP streams for IP cameras and generates ready-to-use Frigate/go2rtc configs. Tests 102K+ URL patterns in ~30 seconds across 67K+ camera models.
 
+### Prerequisites
+
+- Proxmox VE 8.x running on the host
+- A configured Linux bridge (default: `vmbr0`) with internet access
+- `local` storage for templates, `local-lvm` (or equivalent) for the container disk
+- Internet access from the Proxmox host
+
 ### Install
+
+> **Security note:** Always review scripts before running them as root.
+> You can read this one at [ct/strix.sh](ct/strix.sh) and [ct/strix-install.sh](ct/strix-install.sh) before running.
 
 Run this in your **Proxmox VE shell**:
 
